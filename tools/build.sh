@@ -7,6 +7,7 @@ cmake -S "$ROOT" -B "$ROOT/build/native" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$ROOT/build/native" --parallel "$JOBS"
 mkdir -p "$ROOT/bin"
 cp "$ROOT/build/native/taohash_pool" "$ROOT/bin/taohash_pool"
+cp "$ROOT/build/native/whitepaper_incentive" "$ROOT/bin/whitepaper_incentive"
 
 if [[ "${WITH_ASCEND:-0}" == 1 ]]; then
   CANN_HOME="${CANN_HOME:-/usr/local/Ascend/cann}"
@@ -56,6 +57,7 @@ if [[ "${WITH_ASCEND:-0}" == 1 ]]; then
 fi
 
 echo "Built $ROOT/bin/taohash_pool"
+echo "Built $ROOT/bin/whitepaper_incentive (reference only)"
 if [[ "${WITH_ASCEND:-0}" == 1 ]]; then
   echo "Built $ROOT/bin/libtaohash_npu.so"
 fi

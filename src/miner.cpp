@@ -107,6 +107,7 @@ struct Share {
     uint64_t session=0;
     std::string job, ex2, ntime, nonce;
     std::string hash;
+    double difficulty=1.0; // pool-assigned difficulty for this job; work proxy, not earnings
 };
 struct Settings {
     std::string pool="btc.taohash.com",port="3331",user,pass="x",backend="auto",library;
@@ -240,6 +241,7 @@ class Pool {
     std::deque<Share> submissions;
     int next_id=100;
     uint64_t num_accepted=0,num_rejected=0;
+    double accepted_difficulty=0.0; // sum of accepted share difficulties, NOT payout
 public:
     explicit Pool(Settings settings):conf(std::move(settings)){}
     Snapshot snapshot(){std::lock_guard<std::mutex> hold(mutex);return state;}
@@ -265,6 +267,7 @@ public:
     }
     uint64_t accepted(){std::lock_guard<std::mutex> h(mutex);return num_accepted;}
     uint64_t rejected(){std::lock_guard<std::mutex> h(mutex);return num_rejected;}
+    double accepted_work(){std::lock_guard<std::mutex> h(mutex);return accepted_difficulty;}
     void process(json_object *msg,std::unordered_map<int,Share>&outstanding,std::vector<std::string>&outbound){
         json_object *method=obj_get(msg,"method"),*params=obj_get(msg,"params"),*id=obj_get(msg,"id");
         if(method && json_object_is_type(method,json_type_string)){
@@ -336,7 +339,8 @@ public:
             bool ok=!has_error&&json_object_get_boolean(result);
             {
                 std::lock_guard<std::mutex> hold(mutex);
-                if(ok)++num_accepted;else ++num_rejected;
+                if(ok){++num_accepted;accepted_difficulty+=it->second.difficulty;}
+                else ++num_rejected;
             }
             log(std::string(ok?"SHARE ACCEPTED ":"SHARE REJECTED ")+it->second.hash+
                 (has_error?" error="+std::string(json_object_to_json_string(error)):""));
@@ -499,13 +503,15 @@ static void miner(Pool &pool,Scanner &scanner,const Settings &settings){
             for(size_t i=0;i<extra.size();++i)extra[i]=(uint8_t)(current_ex>>(8*(i%8)));
             sh.ex2=to_hex(extra.data(),extra.size());
             sh.hash=to_hex(ref,32); // raw SHA256d digest; pool checks it independently
+            sh.difficulty=snap.difficulty;
             if(pool.snapshot().generation==snap.generation)pool.post(std::move(sh));
         }
         auto now=Clock::now();if(now-last_report>=std::chrono::seconds(10)){
             double dt=std::chrono::duration<double>(now-last_report).count();
             uint64_t h=scanner.hashes();double rate=(h-last_hashes)/dt;
             log("rate="+std::to_string(rate/1e6)+" MH/s (local scans) shares accepted="+
-                std::to_string(pool.accepted())+" rejected="+std::to_string(pool.rejected()));
+                std::to_string(pool.accepted())+" rejected="+std::to_string(pool.rejected())+
+                " accepted_diff_sum="+std::to_string(pool.accepted_work())+" (share work, NOT rewards)");
             last_report=now;last_hashes=h;
         }
     }
@@ -520,7 +526,8 @@ int main(int argc,char **argv){
         std::thread net([&](){network(pool,s);});
         miner(pool,scanner,s);
         keep_running.store(false);net.join();
-        log("stopped cleanly; accepted="+std::to_string(pool.accepted())+" rejected="+std::to_string(pool.rejected()));
+        log("stopped cleanly; accepted="+std::to_string(pool.accepted())+" rejected="+std::to_string(pool.rejected())+
+            " accepted_diff_sum="+std::to_string(pool.accepted_work()));
     }catch(const std::exception &e){std::cerr<<"ERROR: "<<e.what()<<"\n";help();return 1;}
     return 0;
 }

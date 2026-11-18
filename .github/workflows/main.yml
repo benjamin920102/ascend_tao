@@ -53,6 +53,7 @@ jobs:
           set -euo pipefail
           bash tools/build.sh
           test -s bin/taohash_pool
+          test -s bin/whitepaper_incentive
           test -s bin/libtaohash_npu.so
 
       - name: Package ARM64 build
@@ -61,8 +62,8 @@ jobs:
           set -euo pipefail
           archive="ascend-taohash-aarch64-cann${CANN_VERSION}.tar.gz"
           tar -czf "$archive" \
-            bin/taohash_pool bin/libtaohash_npu.so \
-            README.md README_ZH_TW.md LICENSE
+            bin/taohash_pool bin/whitepaper_incentive bin/libtaohash_npu.so \
+            README.md README_ZH_TW.md docs/ALGORITHM_MAPPING.md docs/whitepaper_example.json LICENSE
           echo "RELEASE_ARCHIVE=$archive" >> "$GITHUB_ENV"
 
       - name: Upload build artifact
