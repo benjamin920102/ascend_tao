@@ -49,3 +49,15 @@ bash tools/build.sh
 ```
 
 目前修正版本的 C++ host 端已在 Linux x86_64 以 CMake 編譯成功；昇騰 ASC kernel 還沒有在配備 CANN 及 NPU 的機器上編譯和執行驗證，不能把此結果當作 910B/910C 效能數字。
+
+## Bisheng 15.0.5: `Cannot select ... i64 = bswap` 修正
+
+前一版 `th_scan_kernel` 每次 nonce 都在裝置端建立 byte buffer、將 SHA digest 以 byte 拆裝，Bisheng 15.0.5/DAV-2201 在最佳化時可能產生不支援的 `i64 bswap` DAG。這一版：
+
+- 將 AIV hot path 改成 **32-bit SHA state/message words**，在 CPU 事先準備 midstate、tail word 與 target word。
+- 將 SHA256d 兩次壓縮直接以 `uint32_t[16]` 工作字處理，移除裝置端的大量 byte-array pack/unpack。
+- 單一 nonce 的 32-bit 位元組順序轉換採用 4 個 `volatile` byte loads，避免被 Bisheng 合併成不支援的 wide `bswap`。
+- 一般 CPU 端雜湊及礦池協定不變，找到 nonce 後由 CPU 完整重算 SHA256d 並核對 target。
+- 保留 **AIV-only**，不使用 Cube、AIC/AIV flags，也不新增 Python runtime。
+
+注意：本環境沒有 CANN/Bisheng 15.0.5，**不能宣稱 ASC 編譯已通過**；請在 GitHub Actions 重新執行。這些修改以規避所貼出的後端選指錯誤為目標，並非已量測過的 NPU 加速數據。

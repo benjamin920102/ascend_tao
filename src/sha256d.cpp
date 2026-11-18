@@ -1,12 +1,27 @@
 #include <cstdint>
 #include "sha256d_core.h"
-extern "C" void th_host_prepare(const uint8_t header[80],uint8_t prepared[128]) {
+// Device-side preparation uses only 32-bit words (no device byte folding).
+extern "C" void th_host_prepare_words(const uint8_t header[80],
+                                       uint32_t prepared[32]) {
     uint32_t mid[8]; uint8_t tail[64];
-    th_midstate(header,mid,tail);
-    for (int j=0;j<128;++j) prepared[j]=0;
-    for (int i=0;i<8;++i) for (int j=0;j<4;++j)
-        prepared[i*4+j]=(uint8_t)(mid[i]>>(8*j));
-    for (int j=0;j<64;++j) prepared[32+j]=tail[j];
+    th_midstate(header, mid, tail);
+    for (int i=0; i<32; ++i) prepared[i]=0;
+    for (int i=0; i<8; ++i) prepared[i]=mid[i];
+    for (int i=0; i<3; ++i) {
+        int j=i*4;
+        prepared[8+i]=((uint32_t)tail[j]<<24) | ((uint32_t)tail[j+1]<<16) |
+                      ((uint32_t)tail[j+2]<<8) | (uint32_t)tail[j+3];
+    }
+}
+extern "C" void th_host_prepare_target(const uint8_t target_le[32],
+                                        uint32_t target_words[8]) {
+    for (int i=0; i<8; ++i) {
+        int j=i*4;
+        target_words[i]=(uint32_t)target_le[j] |
+                        ((uint32_t)target_le[j+1]<<8) |
+                        ((uint32_t)target_le[j+2]<<16) |
+                        ((uint32_t)target_le[j+3]<<24);
+    }
 }
 extern "C" int th_host_verify(const uint8_t header[80],const uint8_t target[32],
                                uint32_t nonce,const uint8_t digest[32]) {

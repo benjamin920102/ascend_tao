@@ -18,7 +18,7 @@ TAO_INLINE void tao_sha_init(uint32_t h[8]) {
     };
     for (int i = 0; i < 8; ++i) h[i] = v[i];
 }
-TAO_INLINE void tao_sha_block(uint32_t h[8], const uint8_t b[64]) {
+TAO_INLINE void tao_sha_words(uint32_t h[8], const uint32_t block_words[16]) {
     const uint32_t K[64] = {
         0x428a2f98U,0x71374491U,0xb5c0fbcfU,0xe9b5dba5U,
         0x3956c25bU,0x59f111f1U,0x923f82a4U,0xab1c5ed5U,
@@ -40,11 +40,7 @@ TAO_INLINE void tao_sha_block(uint32_t h[8], const uint8_t b[64]) {
     // 16-word circular message schedule: 48 fewer u32 words
     // per SHA compression compared with the original w[64].
     uint32_t w[16];
-    for (int j = 0; j < 16; ++j) {
-        int i = 4*j;
-        w[j] = ((uint32_t)b[i] << 24) | ((uint32_t)b[i+1] << 16) |
-               ((uint32_t)b[i+2] << 8) | (uint32_t)b[i+3];
-    }
+    for (int j = 0; j < 16; ++j) w[j] = block_words[j];
 
     uint32_t a=h[0],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],v=h[7],bb=h[1];
     for (int j = 0; j < 64; ++j) {
@@ -63,6 +59,18 @@ TAO_INLINE void tao_sha_block(uint32_t h[8], const uint8_t b[64]) {
     }
     h[0]+=a; h[1]+=bb; h[2]+=c; h[3]+=d;
     h[4]+=e; h[5]+=f; h[6]+=g; h[7]+=v;
+}
+
+// Byte-oriented entry point for native code; the Ascend device path uses
+// tao_sha_words directly to avoid compiler-generated wide endian shuffles.
+TAO_INLINE void tao_sha_block(uint32_t h[8], const uint8_t b[64]) {
+    uint32_t words[16];
+    for (int j = 0; j < 16; ++j) {
+        const int k = 4*j;
+        words[j] = ((uint32_t)b[k] << 24) | ((uint32_t)b[k+1] << 16) |
+                   ((uint32_t)b[k+2] << 8) | (uint32_t)b[k+3];
+    }
+    tao_sha_words(h, words);
 }
 
 #endif /* TAOHASH_SHA_CORE_H */
