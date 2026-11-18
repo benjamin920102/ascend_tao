@@ -1,0 +1,90 @@
+name: Ascend TAOHash Pool Miner
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Linux ARM64 | CANN 9.0.0
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 90
+    env:
+      CANN_VERSION: '9.0.0'
+      TAO_ASC_ARCH: dav-2201
+      WITH_ASCEND: '1'
+      JOBS: '4'
+      CANN_URL: https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%209.0.0/Ascend-cann-toolkit_9.0.0_linux-aarch64.run
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake curl ca-certificates \
+            libjson-c-dev libssl-dev libboost-dev
+
+      - name: Install CANN toolkit
+        shell: bash
+        run: |
+          set -euo pipefail
+          installer="${RUNNER_TEMP}/Ascend-cann-toolkit_${CANN_VERSION}_linux-aarch64.run"
+          curl --fail --location --retry 3 --connect-timeout 30 --output "$installer" "$CANN_URL"
+          chmod 700 "$installer"
+          bash "$installer" --install --quiet
+          rm -f "$installer"
+
+          CANN_HOME="${HOME}/Ascend/cann"
+          if [[ ! -f "$CANN_HOME/set_env.sh" ]]; then
+            echo "Cannot find $CANN_HOME/set_env.sh after CANN installation" >&2
+            exit 1
+          fi
+          echo "CANN_HOME=$CANN_HOME" >> "$GITHUB_ENV"
+
+      - name: Build C++ miner and Ascend AIV library
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tools/build.sh
+          test -s bin/taohash_pool
+          test -s bin/libtaohash_npu.so
+
+      - name: Package ARM64 build
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="ascend-taohash-aarch64-cann${CANN_VERSION}.tar.gz"
+          tar -czf "$archive" \
+            bin/taohash_pool bin/libtaohash_npu.so \
+            README.md README_ZH_TW.md LICENSE
+          echo "RELEASE_ARCHIVE=$archive" >> "$GITHUB_ENV"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ascend-taohash-aarch64-cann9.0.0
+          path: ${{ env.RELEASE_ARCHIVE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish pre-release
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pre-release-${{ github.run_number }}
+          name: Pre-release Build #${{ github.run_number }}
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: ${{ env.RELEASE_ARCHIVE }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Repository Settings > Actions > General > Workflow permissions:
+        # enable Read and write permissions for prerelease publishing.
+    permissions:
+      contents: write
